@@ -27,6 +27,37 @@ struct TrackData {
     anchor_end: Point,
 }
 
+fn calculate_tracks(
+    is_column: bool,
+    layout_data: &LayoutData,
+    grid_data: &GridData,
+    layout_bounds: &Bounds,
+    cells: &Vec<GridCell>,
+    shapes: &HashMap<Uuid, Shape>,
+    bounds: &HashMap<Uuid, Bounds>,
+) -> Vec<TrackData> {
+    let layout_size = if is_column {
+        layout_bounds.width() - layout_data.padding_left - layout_data.padding_right
+    } else {
+        layout_bounds.height() - layout_data.padding_top - layout_data.padding_bottom
+    };
+
+    let grid_tracks = if is_column {
+        &grid_data.columns
+    } else {
+        &grid_data.rows
+    };
+
+    let mut tracks = init_tracks(grid_tracks, layout_size);
+    set_auto_base_size(is_column, &mut tracks, cells, shapes, bounds);
+    set_auto_multi_span(is_column, layout_data, &layout_bounds, &mut tracks);
+    set_flex_multi_span(is_column, layout_data, &layout_bounds, &mut tracks);
+    set_fr_value(is_column, layout_data, &layout_bounds, &mut tracks);
+    stretch_tracks(is_column, layout_data, &layout_bounds, &mut tracks);
+    assign_anchors(is_column, layout_data, &layout_bounds, &mut tracks);
+    return tracks;
+}
+
 fn init_tracks(track: &Vec<GridTrack>, size: f32) -> Vec<TrackData> {
     track
         .iter()
@@ -46,6 +77,104 @@ fn init_tracks(track: &Vec<GridTrack>, size: f32) -> Vec<TrackData> {
             }
         })
         .collect()
+}
+
+// Go through cells to adjust auto sizes for span=1. Base is the max of its children
+fn set_auto_base_size(
+    column: bool,
+    tracks: &mut Vec<TrackData>,
+    cells: &Vec<GridCell>,
+    shapes: &HashMap<Uuid, Shape>,
+    bounds: &HashMap<Uuid, Bounds>,
+) {
+    for cell in cells {
+        let (prop, prop_span) = if column {
+            (cell.column, cell.column_span)
+        } else {
+            (cell.row, cell.row_span)
+        };
+
+        if prop_span != 1 {
+            continue;
+        }
+
+        let track = &mut tracks[prop as usize];
+
+        if track.track_type != GridTrackType::Auto && track.track_type != GridTrackType::Flex {
+            continue;
+        }
+
+        let Some(shape) = cell.shape.and_then(|id| shapes.get(&id)) else {
+            continue;
+        };
+
+        let bounds = bounds.find(shape);
+
+        let shape_size = if column {
+            bounds.width()
+        } else {
+            bounds.height()
+        };
+
+        let min_size = if column && shape.is_layout_horizontal_fill() {
+            shape.layout_item.and_then(|i| i.min_w).unwrap_or(MIN_SIZE)
+        } else if !column && shape.is_layout_vertical_fill() {
+            shape.layout_item.and_then(|i| i.min_h).unwrap_or(MIN_SIZE)
+        } else {
+            shape_size
+        };
+
+        track.size = f32::max(track.size, min_size);
+    }
+}
+
+// Adjust multi-spaned cells with no flex columns
+fn set_auto_multi_span(
+    _column: bool,
+    _layout_data: &LayoutData,
+    _layout_bounds: &Bounds,
+    _tracks: &mut Vec<TrackData>,
+) {
+    // Ordena descendente por prop-span
+    // Quitamos los tracks que tengan flex (se reservaran en el otro metodo)
+    // Recuperamos el valor que tenemos que distribuir (el tamaño minimo de la celda restando los gaps del span)
+    // Distribuimos el tamaño entre los tracks que ya tienen valor fijo
+    // Distribuimos el espacio entre los "auto"
+    // Si aún tenemos espacio dividimos entre todos los tracks (hay que reservar suficiente espacio)
+}
+
+fn set_flex_multi_span(
+    _column: bool,
+    _layout_data: &LayoutData,
+    _layout_bounds: &Bounds,
+    _tracks: &mut Vec<TrackData>,
+) {
+    // Ordena descendente por prop-span
+    // Mirar que alguna de sus tracks es flex
+    // Recuperamos el valor que tenemos que distribuir (el tamaño minimo de la celda restando los gaps del span)
+    // Distribuimos el tamaño primero por los tracks que ya tienen tamaño fijo
+    // Cuando hemos distribuido dividimos entre los frs en partes iguales con el resto
+}
+
+// Calculate the `fr` unit and adjust the size
+fn set_fr_value(
+    _column: bool,
+    _layout_data: &LayoutData,
+    _layout_bounds: &Bounds,
+    _tracks: &mut Vec<TrackData>,
+) {
+    // Calculamos el numero de FR's que tenemos que distribuir
+    // Dividimos el espacio restante entre los FRS
+    // Asignamos el espacio alos FRS
+}
+
+fn stretch_tracks(
+    _column: bool,
+    _layout_data: &LayoutData,
+    _layout_bounds: &Bounds,
+    _tracks: &mut Vec<TrackData>,
+) {
+    // Si estamos en stretch distribuimos el espacio que tenemos sobrante entre los tracks auto
 }
 
 fn assign_anchors(
@@ -148,15 +277,25 @@ fn calculate_cell_data<'a>(
 
     let layout_bounds = bounds.find(shape);
 
-    let layout_width = layout_bounds.width() - layout_data.padding_left - layout_data.padding_right;
-    let layout_height =
-        layout_bounds.height() - layout_data.padding_top - layout_data.padding_bottom;
+    let column_tracks = calculate_tracks(
+        true,
+        layout_data,
+        grid_data,
+        &layout_bounds,
+        &grid_data.cells,
+        shapes,
+        bounds,
+    );
 
-    let mut column_tracks = init_tracks(&grid_data.columns, layout_width);
-    let mut row_tracks = init_tracks(&grid_data.rows, layout_height);
-
-    assign_anchors(true, layout_data, &layout_bounds, &mut column_tracks);
-    assign_anchors(false, layout_data, &layout_bounds, &mut row_tracks);
+    let row_tracks = calculate_tracks(
+        false,
+        layout_data,
+        grid_data,
+        &layout_bounds,
+        &grid_data.cells,
+        shapes,
+        bounds,
+    );
 
     create_cell_data(
         &layout_bounds,
