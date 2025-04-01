@@ -364,13 +364,12 @@
   ([changes library-data component-id page delta old-id parent-id frame-id]
    (let [component         (ctkl/get-deleted-component library-data component-id)
          parent            (get-in page [:objects parent-id])
-         main-inst         (get-in component [:objects (:main-instance-id component)])
          inside-component? (some? (ctn/get-instance-root (:objects page) parent))
          shapes            (cfh/get-children-with-self (:objects component) (:main-instance-id component))
-         shapes            (map #(gsh/move % delta) shapes)
+         moved-shapes      (map #(gsh/move % delta) shapes)
          is-variant?       (ctk/is-variant? component)
 
-         first-shape       (cond-> (first shapes)
+         first-shape       (cond-> (first moved-shapes)
                              (not (nil? parent-id))
                              (assoc :parent-id parent-id)
                              (not (nil? frame-id))
@@ -394,9 +393,9 @@
                              (some? old-id) (pcb/amend-last-change #(assoc % :old-id old-id))) ; on copy/paste old id is used later to reorder the paster layers
          changes           (reduce #(pcb/add-object %1 %2 {:ignore-touched true})
                                    changes
-                                   (rest shapes))]
-     {:changes (pcb/restore-component changes component-id (:id page) main-inst parent-id)
-      :shape (first shapes)})))
+                                   (rest moved-shapes))]
+     {:changes (pcb/restore-component changes component-id (:id page) shapes parent-id)
+      :shape (first moved-shapes)})))
 
 ;; ---- General library synchronization functions ----
 
@@ -2188,20 +2187,22 @@
         ;; When we duplicate a variant along with its variant-container, we will duplicate it
         in-variant-container? (contains? ids-map (:variant-id main))
 
-
         restore-component
-        #(let [origin-frame            (get-in page [:objects frame-id])
-               delta                   (cond-> delta
-                                         (some? origin-frame)
-                                         (gpt/subtract (-> origin-frame :selrect gpt/point)))
-               {:keys [shape changes]} (prepare-restore-component changes
-                                                                  library-data
-                                                                  component-id
-                                                                  page
-                                                                  delta
-                                                                  main-id
-                                                                  parent-id
-                                                                  frame-id)]
+        #(let [origin-frame (as-> (ctf/get-component libraries file-id component-id {:include-deleted? true}) $
+                              (dm/get-in $ [:objects main-id])
+                              (dm/get-in page [:objects (:frame-id $)]))
+               delta        (cond-> delta
+                              (some? origin-frame)
+                              (gpt/subtract (-> origin-frame :selrect gpt/point)))
+               {:keys [shape changes]}
+               (prepare-restore-component changes
+                                          library-data
+                                          component-id
+                                          page
+                                          delta
+                                          main-id
+                                          parent-id
+                                          frame-id)]
            [shape changes])
 
         [_shape changes]
