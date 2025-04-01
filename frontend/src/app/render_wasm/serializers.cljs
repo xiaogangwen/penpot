@@ -43,16 +43,24 @@
     (aset u32-arr 3 (aget buffer 3))
     (js/Uint8Array. (.-buffer u32-arr))))
 
-(defn matrix->u8
-  [{:keys [a b c d e f]}]
-  (let [f32-arr (js/Float32Array. 6)]
-    (aset f32-arr 0 a)
-    (aset f32-arr 1 b)
-    (aset f32-arr 2 c)
-    (aset f32-arr 3 d)
-    (aset f32-arr 4 e)
-    (aset f32-arr 5 f)
-    (js/Uint8Array. (.-buffer f32-arr))))
+(defn uuid->heapu32
+  [id heap offset]
+  (let [buffer (uuid/get-u32 id)]
+    (aset heap (+ offset 0) (aget buffer 0))
+    (aset heap (+ offset 1) (aget buffer 1))
+    (aset heap (+ offset 2) (aget buffer 2))
+    (aset heap (+ offset 3) (aget buffer 3))
+    buffer))
+
+(defn matrix->heapf32
+  [{:keys [a b c d e f]} heap offset]
+  (aset heap (+ offset 0) a)
+  (aset heap (+ offset 1) b)
+  (aset heap (+ offset 2) c)
+  (aset heap (+ offset 3) d)
+  (aset heap (+ offset 4) e)
+  (aset heap (+ offset 5) f))
+
 
 (defn translate-shape-type
   [type]
